@@ -1,9 +1,10 @@
-const Tom = require('test-runner').Tom
-const Lws = require('../')
-const a = require('assert').strict
-const http2 = require('http2')
+import TestRunner from 'test-runner'
+import assert from 'assert'
+import Lws from 'lws'
+import http2 from 'http2'
 
-const tom = module.exports = new Tom()
+const a = assert.strict
+const tom = new TestRunner.Tom()
 
 async function fetchHttp2 (host, path) {
   return new Promise((resolve, reject) => {
@@ -40,16 +41,19 @@ tom.test('--http2', async function () {
       }
     }
   }
-  const lws = Lws.create({
+  const lws = await Lws.create({
     stack: [One],
     http2: true,
     port: port
   })
 
-  const response = await fetchHttp2(`https://localhost:${port}`, '/')
-  lws.server.close()
-  a.equal(response.headers[':status'], 200)
-  a.equal(response.body, 'one')
+  try {
+    const response = await fetchHttp2(`https://localhost:${port}`, '/')
+    a.equal(response.headers[':status'], 200)
+    a.equal(response.body, 'one')
+  } finally {
+    lws.server.close()
+  }
 })
 
 tom.test('--http2 --key and --cert', async function () {
@@ -62,17 +66,20 @@ tom.test('--http2 --key and --cert', async function () {
       }
     }
   }
-  const lws = Lws.create({
+  const lws = await Lws.create({
     stack: [One],
     key: 'ssl/private-key.pem',
     cert: 'ssl/lws-cert.pem',
     port: port,
     http2: true
   })
-  const response = await fetchHttp2(`https://localhost:${port}`, '/')
-  lws.server.close()
-  a.equal(response.headers[':status'], 200)
-  a.equal(response.body, 'one')
+  try {
+    const response = await fetchHttp2(`https://localhost:${port}`, '/')
+    a.equal(response.headers[':status'], 200)
+    a.equal(response.body, 'one')
+  } finally {
+    lws.server.close()
+  }
 })
 
 tom.test('--http2 --pfx', async function () {
@@ -85,16 +92,19 @@ tom.test('--http2 --pfx', async function () {
       }
     }
   }
-  const lws = Lws.create({
+  const lws = await Lws.create({
     stack: [One],
     pfx: 'ssl/lws.pfx',
     port: port,
     http2: true
   })
-  const response = await fetchHttp2(`https://localhost:${port}`, '/')
-  lws.server.close()
-  a.equal(response.headers[':status'], 200)
-  a.equal(response.body, 'one')
+  try {
+    const response = await fetchHttp2(`https://localhost:${port}`, '/')
+    a.equal(response.headers[':status'], 200)
+    a.equal(response.body, 'one')
+  } finally {
+    lws.server.close()
+  }
 })
 
 tom.test('--http2 --pfx, --max-connections', async function () {
@@ -107,9 +117,9 @@ tom.test('--http2 --pfx, --max-connections', async function () {
       }
     }
   }
-  a.throws(
+  await a.rejects(
     () => {
-      Lws.create({
+      return Lws.create({
         stack: [One],
         pfx: 'ssl/lws.pfx',
         port: port,
@@ -131,9 +141,9 @@ tom.test('--http2 --pfx, --keep-alive-timeout', async function () {
       }
     }
   }
-  a.throws(
+  await a.rejects(
     () => {
-      Lws.create({
+      return Lws.create({
         stack: [One],
         pfx: 'ssl/lws.pfx',
         port: port,
@@ -144,3 +154,5 @@ tom.test('--http2 --pfx, --keep-alive-timeout', async function () {
     /no effect with http2/
   )
 })
+
+export default tom

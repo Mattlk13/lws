@@ -1,9 +1,13 @@
-const Tom = require('test-runner').Tom
-const Lws = require('../')
-const a = require('assert').strict
-const fetch = require('node-fetch')
+import TestRunner from 'test-runner'
+import assert from 'assert'
+import Lws from 'lws'
+import fetch from 'node-fetch'
+import url from 'url'
+import fs from 'fs'
 
-const tom = module.exports = new Tom()
+const a = assert.strict
+
+const tom = new TestRunner.Tom()
 
 tom.test('simple http', async function () {
   const port = 9100 + this.index
@@ -15,7 +19,7 @@ tom.test('simple http', async function () {
       }
     }
   }
-  const lws = Lws.create({
+  const lws = await Lws.create({
     stack: [One],
     port: port
   })
@@ -31,13 +35,12 @@ tom.test('hostname', async function () {
   class One {
     middleware (options) {
       return (ctx, next) => {
-        const fs = require('fs')
         ctx.body = fs.createReadStream('package.json')
         next()
       }
     }
   }
-  const lws = Lws.create({
+  const lws = await Lws.create({
     stack: [One],
     port: port,
     hostname: 'localhost'
@@ -67,7 +70,7 @@ tom.test('--max-connections, --keep-alive-timeout', async function () {
       }
     }
   }
-  const lws = Lws.create({
+  const lws = await Lws.create({
     stack: [One],
     port: port,
     maxConnections: 11,
@@ -76,8 +79,7 @@ tom.test('--max-connections, --keep-alive-timeout', async function () {
   const server = lws.server
   a.equal(server.keepAliveTimeout, 10001)
   a.equal(server.maxConnections, 11)
-  const url = require('url')
-  const reqOptions = url.parse(`http://127.0.0.1:${port}`)
+  const reqOptions = new url.URL(`http://127.0.0.1:${port}`)
   reqOptions.rejectUnauthorized = false
   const response = await fetch(reqOptions)
   server.close()
@@ -85,3 +87,5 @@ tom.test('--max-connections, --keep-alive-timeout', async function () {
   const body = await response.text()
   a.equal(body, 'one')
 })
+
+export default tom

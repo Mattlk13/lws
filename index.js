@@ -1,6 +1,15 @@
-const util = require('./lib/util')
-const t = require('typical')
-const EventEmitter = require('events')
+import * as util from './lib/util.js'
+import deepMerge from '@75lb/deep-merge'
+import t from 'typical'
+import EventEmitter from 'events'
+import arrayify from 'array-back'
+import Stack from './lib/middleware-stack.js'
+import HttpServerFactory from './lib/server-factory/http.js'
+import Http2ServerFactory from './lib/server-factory/http2.js'
+import HttpsServerFactory from './lib/server-factory/https.js'
+import Koa from 'koa'
+import ViewPlugin from './lib/view/view-plugin.js'
+import byteSize from 'byte-size'
 
 /**
  * A lean, modular web server for rapid full-stack development.
@@ -25,7 +34,7 @@ const EventEmitter = require('events')
  * }
  *
  * // Launch a HTTP server with the Greeter middleware attached
- * const lws = Lws.create({ stack: Greeter })
+ * const lws = await Lws.create({ stack: Greeter })
  *
  * // $ curl http://127.0.0.1:8000
  * // Hello!
@@ -66,9 +75,10 @@ class Lws extends EventEmitter {
      * The active lws config.
      * @type {external:LwsConfig}
      */
-    this.config = null
-
-    this._setConfig(config)
+    this.config = deepMerge(
+      this._getDefaultConfig(),
+      config
+    )
   }
 
   /**
@@ -79,8 +89,7 @@ class Lws extends EventEmitter {
   _getDefaultConfig () {
     return {
       port: 8000,
-      modulePrefix: 'lws-',
-      moduleDir: ['.']
+      moduleDir: [process.cwd()]
     }
   }
 
@@ -89,10 +98,10 @@ class Lws extends EventEmitter {
    * @param {external:LwsConfig}
    * @ignore
    */
-  _setConfig (config = {}) {
-    this.config = util.deepMerge(
-      this._getDefaultConfig(),
-      util.getStoredConfig(config.configFile),
+  async loadStoredConfig () {
+    const config = await util.getStoredConfig(this.config.configFile)
+    this.config = deepMerge(
+      this.config,
       config
     )
   }
@@ -101,17 +110,14 @@ class Lws extends EventEmitter {
    * Sets the middleware stack, loading plugins if supplied.
    * @ignore
    */
-  _setStack () {
-    const arrayify = require('array-back')
-    const Stack = require('./lib/middleware-stack')
+  async _setStack () {
     let stack = this.config.stack
 
     /* convert stack to type MiddlewareStack */
     if (!(stack instanceof Stack)) {
       stack = arrayify(this.config.stack).slice()
-      stack = Stack.from(stack, {
-        paths: this.config.moduleDir,
-        prefix: this.config.modulePrefix
+      stack = await Stack.from(stack, {
+        paths: this.config.moduleDir
       })
     }
     util.propagate('verbose', stack, this)
@@ -134,15 +140,16 @@ class Lws extends EventEmitter {
     }
 
     /* The base HTTP server factory */
-    let ServerFactory = require('./lib/server-factory/http')
+    let ServerFactory = HttpServerFactory
 
     /* use HTTPS server factory */
     if (options.https || (!options.http2 && ((options.key && options.cert) || options.pfx))) {
-      ServerFactory = require('./lib/server-factory/https')
+      ServerFactory = HttpsServerFactory
     /* use HTTP2 server factory */
     } else if (options.http2) {
-      ServerFactory = require('./lib/server-factory/http2')
+      ServerFactory = Http2ServerFactory
     }
+
     const factory = new ServerFactory()
     util.propagate('verbose', factory, this)
     this.server = factory.create(options)
@@ -152,9 +159,9 @@ class Lws extends EventEmitter {
   /**
    * Attach the Middleware stack to the server. Must be run after `lws.createServer()`.
    */
-  useMiddlewareStack () {
+  async useMiddlewareStack () {
     if (!this.server) throw new Error('Create server first')
-    this._setStack()
+    await this._setStack()
     const middlewares = this.stack.getMiddlewareFunctions(this.config, this)
     this.server.on('request', this._getRequestHandler(middlewares))
   }
@@ -167,8 +174,6 @@ class Lws extends EventEmitter {
    */
   _getRequestHandler (middlewares = []) {
     /* build Koa application using the supplied middleware */
-    const Koa = require('koa')
-    const arrayify = require('array-back')
     const app = new Koa()
     app.on('error', err => {
       /**
@@ -194,10 +199,8 @@ class Lws extends EventEmitter {
     const config = this.config
     if (config.view) {
       if (typeof config.view === 'string') {
-        const ViewPlugin = require('./lib/view/view-plugin')
         const ViewClass = ViewPlugin.load(config.view, {
-          paths: config.moduleDir,
-          prefix: config.modulePrefix
+          paths: config.moduleDir
         })
         config.view = new ViewClass()
       }
@@ -210,7 +213,6 @@ class Lws extends EventEmitter {
   /* Pipe server events into 'verbose' event stream */
   _propagateServerEvents () {
     function socketProperties (socket) {
-      const byteSize = require('byte-size')
       const output = {
         bytesRead: byteSize(socket.bytesRead).toString(),
         bytesWritten: byteSize(socket.bytesWritten).toString(),
@@ -273,8 +275,14 @@ class Lws extends EventEmitter {
    * @param config {external:LwsConfig}
    * @returns {Lws}
    */
-  static create (config) {
+  static async create (config) {
     const lws = new this(config)
+    if (!config._alreadyMerged) {
+      await lws.loadStoredConfig()
+    }
+
+    /* Assign the process title */
+    if (config.title) process.title = config.title
 
     /* attach the view */
     lws.useView()
@@ -286,7 +294,7 @@ class Lws extends EventEmitter {
     lws._propagateServerEvents()
 
     /* attach middleware */
-    lws.useMiddlewareStack()
+    await lws.useMiddlewareStack()
 
     /* start server */
     lws.server.listen(lws.config.port, lws.config.hostname)
@@ -295,4 +303,4 @@ class Lws extends EventEmitter {
   }
 }
 
-module.exports = Lws
+export default Lws
