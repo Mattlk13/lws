@@ -106,6 +106,6 @@ $ npm install --save-dev lws
 
 * * *
 
-&copy; 2016-25 Lloyd Brookes \<opensource@75lb.com\>.
+&copy; 2016-26 Lloyd Brookes \<opensource@75lb.com\>.
 
 Documented by [jsdoc-to-markdown](https://github.com/jsdoc2md/jsdoc-to-markdown).
